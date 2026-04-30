@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>Tự đánh giá (SRL Evaluate)</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #f8f9fa; display: flex; justify-content: center; padding: 40px; }
+        .form-container { background: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 600px; }
+        h2 { color: #2c3e50; text-align: center; border-bottom: 2px solid #3498db; padding-bottom: 10px; }
+        .question { margin-bottom: 20px; }
+        label { font-weight: bold; display: block; margin-bottom: 8px; color: #34495e; }
+        select, textarea { width: 100%; padding: 10px; border: 1px solid #ced4da; border-radius: 4px; font-size: 14px; }
+        textarea { height: 80px; resize: vertical; }
+        .btn-submit { background: #28a745; color: white; border: none; padding: 12px 20px; font-size: 16px; font-weight: bold; border-radius: 5px; width: 100%; cursor: pointer; margin-top: 10px; }
+        .btn-submit:hover { background: #218838; }
+    </style>
+</head>
+<body>
+
+    <div class="form-container">
+        <h2>📝 Bảng Tự đánh giá (Self-Evaluation)</h2>
+        <p style="text-align: center; color: #666;">Vui lòng nhìn lại quá trình làm bài và trả lời các câu hỏi sau:</p>
+
+        <div class="question">
+            <label>1. Bạn đã hoàn thành nhiệm vụ bài toán yêu cầu chưa?</label>
+            <select id="q1">
+                <option value="yes">Hoàn thành 100%</option>
+                <option value="partial">Hoàn thành một phần</option>
+                <option value="no">Chưa hoàn thành</option>
+            </select>
+        </div>
+
+        <div class="question">
+            <label>2. Bạn đánh giá việc phân bổ thời gian của mình có hợp lý không?</label>
+            <select id="q2">
+                <option value="good">Rất hợp lý (Code xong sớm/Đúng hạn)</option>
+                <option value="ok">Tạm ổn (Hơi vội ở phút cuối)</option>
+                <option value="bad">Không hợp lý (Mất quá nhiều thời gian dò lỗi)</option>
+            </select>
+        </div>
+
+        <div class="question">
+            <label>3. Tự đánh giá mức độ tập trung của bạn trong phiên làm bài này:</label>
+            <select id="q3">
+                <option value="high">Rất cao (Không bị phân tâm)</option>
+                <option value="medium">Bình thường</option>
+                <option value="low">Thấp (Hay lướt web/Làm việc riêng)</option>
+            </select>
+        </div>
+
+        <div class="question">
+            <label>4. Chiến lược học/gỡ lỗi nào bạn thấy hiệu quả nhất hôm nay?</label>
+            <textarea id="q4" placeholder="Ví dụ: Đọc kỹ lại gợi ý, in biến ra màn hình để kiểm tra..."></textarea>
+        </div>
+
+        <button class="btn-submit" onclick="submitMockForm()">Gửi đánh giá & Kết thúc</button>
+    </div>
+
+    <script>
+        function submitMockForm() {
+            // Giả lập việc gửi dữ liệu
+            alert("✅ Hệ thống MMLA đã ghi nhận kết quả đánh giá của bạn. Cảm ơn bạn đã tham gia!");
+            // Đóng tab hiện tại
+            window.close();
+        }
+    </script>
+
+</body>
+</html>

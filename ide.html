@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <title>MMLA Python IDE & SRL & Camera</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <style>
+        body { font-family: Arial, sans-serif; padding: 15px; background: #f4f7f6; margin: 0; }
+        .main-container { display: flex; gap: 15px; align-items: stretch; }
+        .left-panel { width: 30%; display: flex; flex-direction: column; gap: 15px; }
+        .right-panel { width: 70%; display: flex; flex-direction: column; }
+        .camera-container { background: #000; border-radius: 8px; overflow: hidden; position: relative; border: 2px solid #ccc; }
+        #webcam { width: 100%; height: auto; display: block; transform: scaleX(-1); }
+        .camera-label { position: absolute; top: 10px; left: 10px; background: rgba(255,0,0,0.8); color: white; padding: 3px 8px; font-size: 12px; border-radius: 4px; font-weight: bold; animation: blink 2s infinite; }
+        @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+        .plan-card { background: #e3f2fd; border-left: 4px solid #2196f3; padding: 10px; border-radius: 4px; font-size: 13px; }
+        .plan-card button { background: #2196f3; color: white; border: none; padding: 5px 10px; cursor: pointer; border-radius: 3px; margin-top: 5px; width: 100%; }
+        .ide-container { border: 1px solid #ced4da; background: #fff; border-radius: 8px; padding: 15px; flex-grow: 1; display: flex; flex-direction: column; }
+        .CodeMirror { border: 1px solid #ccc; border-radius: 4px; height: 250px; font-size: 15px; }
+        #terminal { background: #1e1e1e; color: #00ff00; padding: 15px; height: 120px; overflow-y: auto; font-family: monospace; margin-top: 15px; border-radius: 4px; white-space: pre-wrap; }
+        .action-bar { display: flex; justify-content: space-between; margin-top: 15px; }
+        .btn-run { background: #28a745; color: white; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 5px; }
+        .btn-run:disabled { background: #6c757d; cursor: not-allowed; }
+        .btn-submit { background: #dc3545; color: white; border: none; padding: 10px 20px; cursor: pointer; font-weight: bold; border-radius: 5px; }
+        .error-text { color: #ff4c4c !important; }
+    </style>
+</head>
+<body>
+
+    <div class="main-container">
+        <div class="left-panel">
+            <div class="camera-container">
+                <div class="camera-label">🔴 Đang phân tích AI...</div>
+                <video id="webcam" autoplay muted playsinline></video>
+            </div>
+
+            <div id="planning-section">
+                <div class="plan-card" id="card-1">
+                    <span>💡 <b>Gợi ý:</b> Hãy kiểm tra lỗi thụt lề (indentation) và dấu hai chấm.</span>
+                    <button onclick="acknowledgePlan('card-1', 'Đọc gợi ý lỗi thụt lề')">Đã đọc & Áp dụng</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <div class="ide-container">
+                <h3 style="margin-top: 0;">💻 Không gian làm bài (Python)</h3>
+                <textarea id="python-editor"># Hãy sửa lỗi đoạn code này
+for i in range(1, 11):
+if i % 2 == 0
+    print(i)
+                </textarea>
+                
+                <div class="action-bar">
+                    <button id="run-btn" class="btn-run" onclick="runCode()" disabled>⏳ Đang tải Python...</button>
+                    <button class="btn-submit" onclick="finishTest()">⏹ Nộp bài & Tự đánh giá</button>
+                </div>
+
+                <div id="terminal">> Hệ thống đang khởi động...</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+
+    <script>
+        // ==========================================
+        // 0. BIẾN TOÀN CỤC
+        // ==========================================
+        let currentSessionID = null;
+
+        // ==========================================
+        // 1. HÀM LẤY THÔNG TIN USER TỪ API
+        // ==========================================
+        async function fetchUserInfo() {
+            try {
+                let response = await fetch('./get_user_info.php');
+                let data = await response.json();
+                
+                if (data.status === 'success' && data.session_id) {
+                    currentSessionID = data.session_id;
+                    console.log(`[Init] ✅ Đã lấy session_id: #${currentSessionID} cho user ${data.username}`);
+                    console.log(`[Init] ✅ User ID: ${data.userid}`);
+                } else {
+                    console.error('[Init] ❌ Không lấy được session_id từ API:', data);
+                    console.error('[Init] 💡 Gợi ý: Đảm bảo đã tạo phiên làm bài (local_mmla_session) cho user này');
+                }
+            } catch (error) {
+                console.error('[Init] ❌ Lỗi kết nối get_user_info.php:', error);
+            }
+        }
+
+        // ==========================================
+        // 2. HÀM GỬI DỮ LIỆU VỀ SERVER
+        // ==========================================
+        async function logAction(category, action_detail, code_content = '', error_log = '') {
+            let timestamp = Math.floor(Date.now() / 1000); 
+            
+            // CRITICAL: Ensure session_id is available before sending
+            if (!currentSessionID) {
+                console.error('[logAction] LỖI: currentSessionID chưa được khởi tạo! Đang đợi API...');
+                // Retry after a short delay
+                await new Promise(resolve => setTimeout(resolve, 500));
+                if (!currentSessionID) {
+                    console.error('[logAction] VẪN KHÔNG CÓ session_id - Bỏ qua log này');
+                    console.error('[logAction] Payload bị mất:', { category, action_detail });
+                    return;
+                }
+            }
+            
+            let payload = {
+                session_id: currentSessionID,
+                category: category,
+                scaffold_type: 'System',
+                action: action_detail,
+                timecreated: timestamp,
+                code_content: code_content, 
+                error_log: error_log
+            };
+
+            // LOG DEBUG: Xem chính xác payload đang gửi đi
+            console.log('📤 [logAction] Payload gửi đi:', JSON.stringify(payload, null, 2));
+
+            // Sử dụng đường dẫn tương đối thay vì hardcode URL
+            let api_url = './save_log.php';
+
+            try {
+                let response = await fetch(api_url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                // Log response để xác nhận server nhận được
+                let result = await response.json();
+                console.log('📥 [logAction] Response từ server:', result);
+                console.log(`[${category}] Đã gửi log vào Phiên #${currentSessionID}.`);
+            } catch (error) {
+                console.error('❌ [logAction] Lỗi kết nối API:', error);
+            }
+        }
+
+        // ==========================================
+        // 2. KHỞI TẠO CAMERA & GIẢ LẬP AI CẢM XÚC
+        // ==========================================
+        let aiInterval;
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                document.getElementById('webcam').srcObject = stream;
+                
+                // Cứ 5 giây AI "nhìn" mặt sinh viên 1 lần và gửi cảm xúc về Server
+                aiInterval = setInterval(() => {
+                    let emotions = ["Focused", "Focused", "Focused", "Confused", "Happy"];
+                    let randomEmotion = emotions[Math.floor(Math.random() * emotions.length)];
+                    logAction('Multimodal', randomEmotion);
+                }, 5000);
+
+            } catch (err) {
+                alert("Hệ thống cần quyền Camera để chạy AI!");
+            }
+        }
+
+        // ==========================================
+        // 3. KHỞI TẠO PYODIDE & LOGIC CHẠY CODE
+        // ==========================================
+        var editor = CodeMirror.fromTextArea(document.getElementById("python-editor"), {
+            mode: "python", lineNumbers: true, indentUnit: 4, theme: "default"
+        });
+
+        let pyodideReady = false;
+        let pyodideInstance;
+
+        async function initPython() {
+            pyodideInstance = await loadPyodide();
+            pyodideReady = true;
+            let runBtn = document.getElementById("run-btn");
+            runBtn.innerText = "▶ CHẠY CHƯƠNG TRÌNH";
+            runBtn.disabled = false;
+            document.getElementById('terminal').innerText = "> Sẵn sàng chạy code!";
+        }
+
+        // ==========================================
+        // 4. KHỞI TẠO TOÀN BỘ HỆ THỐNG (Đảm bảo thứ tự)
+        // ==========================================
+        window.onload = async () => {
+            console.log('[Init] 🔄 Bắt đầu khởi tạo hệ thống...');
+            
+            // BƯỚC 1: Lấy session_id TRƯỚC TIÊN (bắt buộc)
+            await fetchUserInfo();
+            
+            if (!currentSessionID) {
+                document.getElementById('terminal').innerText = '❌ LỖI: Không lấy được phiên làm bài!\nVui lòng đăng nhập và thử lại.';
+                document.getElementById('terminal').style.color = '#ff4c4c';
+                document.getElementById('run-btn').disabled = true;
+                return;
+            }
+            
+            // BƯỚC 2: Chỉ khi có session_id mới khởi tạo camera & Python
+            console.log('[Init] ✅ Session ID đã sẵn sàng, khởi tạo camera...');
+            startCamera();
+            
+            console.log('[Init] ✅ Khởi tạo Python runtime...');
+            await initPython();
+            
+            console.log('[Init] ✅ Khởi tạo timers SRL...');
+            startTimers(); 
+            
+            console.log('[Init] ✅ HOÀN TẤT - Hệ thống sẵn sàng!');
+        };
+
+        async function runCode() {
+            if (!pyodideReady) return;
+            let terminal = document.getElementById("terminal");
+            let code = editor.getValue(); // LẤY MÃ NGUỒN SINH VIÊN VỪA GÕ
+
+            try {
+                pyodideInstance.runPython(`import sys, io\nsys.stdout = io.StringIO()`);
+                await pyodideInstance.runPythonAsync(code);
+                let stdout = pyodideInstance.runPython("sys.stdout.getvalue()");
+                terminal.innerText = "> Kết quả in ra:\n" + stdout;
+                terminal.classList.remove("error-text");
+                
+                // Bắn Code Snapshot lên Server (Code đúng)
+                logAction('Coding', 'Success', code); 
+            } catch (err) {
+                terminal.innerText = "> Lỗi chương trình:\n" + err.message;
+                terminal.classList.add("error-text");
+                
+                // Bắn Code Snapshot lên Server (Code sai)
+                logAction('Coding', 'Error', code, err.message);
+            }
+        }
+
+        // ==========================================
+        // 4. LUỒNG SRL (CHUẨN HÓA JSON CHO view.php)
+        // ==========================================
+        function acknowledgePlan(cardId, actionDesc) {
+            document.getElementById(cardId).style.display = 'none';
+            // Tạo JSON chuẩn: {"type":"UGPP", "act":"Đọc gợi ý..."}
+            let srlData = JSON.stringify({ type: "UGPP", act: actionDesc });
+            logAction('SRL', srlData);
+        }
+
+        function startTimers() {
+            setTimeout(function() {
+                let answer = prompt("⏰ CẢNH BÁO THỜI GIAN: Tiến độ của bạn đến đâu rồi?");
+                if(answer) {
+                    let srlData = JSON.stringify({ type: "USEP", act: "Trả lời Popup: " + answer });
+                    logAction('SRL', srlData);
+                }
+            }, 60000); 
+        }
+
+        function finishTest() {
+            let srlData = JSON.stringify({ type: "UMP", act: "Bấm nút Nộp bài" });
+            logAction('SRL', srlData);
+            
+            if (confirm("Nộp bài và sang phần Đánh giá?")) {
+                clearInterval(aiInterval); 
+                window.open("mock_evaluation.html", "_blank"); 
+            }
+        }
+    </script>
+</body>
+</html>
