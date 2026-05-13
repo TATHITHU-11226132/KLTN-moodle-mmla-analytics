@@ -35,7 +35,7 @@ if ($sessions) {
         $time_format = userdate($session->timestart); 
         
         // Tạo đường dẫn động trỏ sang trang view.php kèm theo ID của phiên học
-        $detail_url = new moodle_url('/local/mmla_analytics/view.php', array('id' => $session->id));
+       $detail_url = new moodle_url('/local/mmla_analytics/view.php', array('session' => $session->id));
         
         // ĐÃ FIX LỖI: Sử dụng ->out() để ép Moodle in ra đường link hoàn chỉnh có chứa tham số ?id=...
         $btn_view = "<a href='" . $detail_url->out() . "' class='btn btn-primary btn-sm'>Xem chi tiết</a>";

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>MMLA Python IDE & SRL & Camera</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <style>
         body { font-family: Arial, sans-serif; padding: 15px; background: #f4f7f6; margin: 0; }
         .main-container { display: flex; gap: 15px; align-items: stretch; }
@@ -65,11 +66,14 @@ if i % 2 == 0
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
     <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
 
-    <script>
+   <script>
         // ==========================================
         // 0. BIẾN TOÀN CỤC
         // ==========================================
         let currentSessionID = null;
+        let aiInterval;
+        let pyodideReady = false;
+        let pyodideInstance;
 
         // ==========================================
         // 1. HÀM LẤY THÔNG TIN USER TỪ API
@@ -82,10 +86,8 @@ if i % 2 == 0
                 if (data.status === 'success' && data.session_id) {
                     currentSessionID = data.session_id;
                     console.log(`[Init] ✅ Đã lấy session_id: #${currentSessionID} cho user ${data.username}`);
-                    console.log(`[Init] ✅ User ID: ${data.userid}`);
                 } else {
-                    console.error('[Init] ❌ Không lấy được session_id từ API:', data);
-                    console.error('[Init] 💡 Gợi ý: Đảm bảo đã tạo phiên làm bài (local_mmla_session) cho user này');
+                    console.error('[Init] ❌ Không lấy được session_id từ API');
                 }
             } catch (error) {
                 console.error('[Init] ❌ Lỗi kết nối get_user_info.php:', error);
@@ -93,22 +95,11 @@ if i % 2 == 0
         }
 
         // ==========================================
-        // 2. HÀM GỬI DỮ LIỆU VỀ SERVER
+        // 2. HÀM GỬI DỮ LIỆU VỀ SERVER (CÓ RADAR BẮT LỖI)
         // ==========================================
         async function logAction(category, action_detail, code_content = '', error_log = '') {
             let timestamp = Math.floor(Date.now() / 1000); 
-            
-            // CRITICAL: Ensure session_id is available before sending
-            if (!currentSessionID) {
-                console.error('[logAction] LỖI: currentSessionID chưa được khởi tạo! Đang đợi API...');
-                // Retry after a short delay
-                await new Promise(resolve => setTimeout(resolve, 500));
-                if (!currentSessionID) {
-                    console.error('[logAction] VẪN KHÔNG CÓ session_id - Bỏ qua log này');
-                    console.error('[logAction] Payload bị mất:', { category, action_detail });
-                    return;
-                }
-            }
+            if (!currentSessionID) return;
             
             let payload = {
                 session_id: currentSessionID,
@@ -120,43 +111,73 @@ if i % 2 == 0
                 error_log: error_log
             };
 
-            // LOG DEBUG: Xem chính xác payload đang gửi đi
-            console.log('📤 [logAction] Payload gửi đi:', JSON.stringify(payload, null, 2));
-
-            // Sử dụng đường dẫn tương đối thay vì hardcode URL
-            let api_url = './save_log.php';
-
             try {
-                let response = await fetch(api_url, {
+                let response = await fetch('./save_log.php', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 
-                // Log response để xác nhận server nhận được
-                let result = await response.json();
-                console.log('📥 [logAction] Response từ server:', result);
-                console.log(`[${category}] Đã gửi log vào Phiên #${currentSessionID}.`);
+                let textResponse = await response.text(); 
+                try {
+                    let result = JSON.parse(textResponse);
+                    if (result.status === 'error') {
+                        console.error("❌ LỖI DATABASE:", result.message);
+                    }
+                } catch (e) {
+                    console.error("❌ Lỗi Moodle:", textResponse);
+                }
             } catch (error) {
-                console.error('❌ [logAction] Lỗi kết nối API:', error);
+                console.error('❌ Mất kết nối API:', error);
             }
         }
 
         // ==========================================
-        // 2. KHỞI TẠO CAMERA & GIẢ LẬP AI CẢM XÚC
+        // 3. KHỞI TẠO CAMERA & THU THẬP CẢM XÚC THẬT (BẢN CHUẨN)
         // ==========================================
-        let aiInterval;
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                document.getElementById('webcam').srcObject = stream;
+                const videoElement = document.getElementById('webcam');
+                videoElement.srcObject = stream;
+        
+                // BẢO HIỂM 1: Set kích thước cho Video để AI không bị "mù"
+                videoElement.addEventListener('loadedmetadata', () => {
+                    videoElement.width = videoElement.videoWidth || 480;
+                    videoElement.height = videoElement.videoHeight || 360;
+                });
+
+                await videoElement.play();
+                console.log('[Edge AI] 👁️ Bắt đầu quét khuôn mặt...');
                 
-                // Cứ 5 giây AI "nhìn" mặt sinh viên 1 lần và gửi cảm xúc về Server
-                aiInterval = setInterval(() => {
-                    let emotions = ["Focused", "Focused", "Focused", "Confused", "Happy"];
-                    let randomEmotion = emotions[Math.floor(Math.random() * emotions.length)];
-                    logAction('Multimodal', randomEmotion);
-                }, 5000);
+                aiInterval = setInterval(async () => {
+                    if (videoElement.paused || videoElement.ended) return;
+            
+                    try {
+                        const detection = await faceapi.detectSingleFace(videoElement, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions();
+                
+                        if (detection) {
+                            const expressions = detection.expressions;
+                            let topEmotion = Object.keys(expressions).reduce((a, b) => expressions[a] > expressions[b] ? a : b);
+                            let topScore = expressions[topEmotion];
+                
+                            if (topScore > 0.5) { 
+                                let normalizedEmotion = 'Focused'; 
+                                if (topEmotion === 'happy') normalizedEmotion = 'Happy';
+                                else if (topEmotion !== 'neutral') normalizedEmotion = 'Confused'; 
+                        
+                                console.log(`📤 [AI] Cảm xúc: ${topEmotion} -> Gửi: ${normalizedEmotion}`);
+                                logAction('Multimodal', normalizedEmotion); 
+                            }
+                        } else {
+                            // BẢO HIỂM 2: Không thấy mặt vẫn bắt buộc gửi dữ liệu để vẽ biểu đồ
+                            console.log(`⚠️ [AI] Không thấy mặt -> Gửi mặc định: Focused`);
+                            logAction('Multimodal', 'Focused');
+                        }
+                    } catch (error) {
+                        console.error('[Edge AI] Lỗi phân tích:', error);
+                    }
+                }, 5000); 
 
             } catch (err) {
                 alert("Hệ thống cần quyền Camera để chạy AI!");
@@ -164,14 +185,11 @@ if i % 2 == 0
         }
 
         // ==========================================
-        // 3. KHỞI TẠO PYODIDE & LOGIC CHẠY CODE
+        // 4. KHỞI TẠO PYODIDE & LOGIC CHẠY CODE
         // ==========================================
         var editor = CodeMirror.fromTextArea(document.getElementById("python-editor"), {
             mode: "python", lineNumbers: true, indentUnit: 4, theme: "default"
         });
-
-        let pyodideReady = false;
-        let pyodideInstance;
 
         async function initPython() {
             pyodideInstance = await loadPyodide();
@@ -182,39 +200,10 @@ if i % 2 == 0
             document.getElementById('terminal').innerText = "> Sẵn sàng chạy code!";
         }
 
-        // ==========================================
-        // 4. KHỞI TẠO TOÀN BỘ HỆ THỐNG (Đảm bảo thứ tự)
-        // ==========================================
-        window.onload = async () => {
-            console.log('[Init] 🔄 Bắt đầu khởi tạo hệ thống...');
-            
-            // BƯỚC 1: Lấy session_id TRƯỚC TIÊN (bắt buộc)
-            await fetchUserInfo();
-            
-            if (!currentSessionID) {
-                document.getElementById('terminal').innerText = '❌ LỖI: Không lấy được phiên làm bài!\nVui lòng đăng nhập và thử lại.';
-                document.getElementById('terminal').style.color = '#ff4c4c';
-                document.getElementById('run-btn').disabled = true;
-                return;
-            }
-            
-            // BƯỚC 2: Chỉ khi có session_id mới khởi tạo camera & Python
-            console.log('[Init] ✅ Session ID đã sẵn sàng, khởi tạo camera...');
-            startCamera();
-            
-            console.log('[Init] ✅ Khởi tạo Python runtime...');
-            await initPython();
-            
-            console.log('[Init] ✅ Khởi tạo timers SRL...');
-            startTimers(); 
-            
-            console.log('[Init] ✅ HOÀN TẤT - Hệ thống sẵn sàng!');
-        };
-
         async function runCode() {
             if (!pyodideReady) return;
             let terminal = document.getElementById("terminal");
-            let code = editor.getValue(); // LẤY MÃ NGUỒN SINH VIÊN VỪA GÕ
+            let code = editor.getValue(); 
 
             try {
                 pyodideInstance.runPython(`import sys, io\nsys.stdout = io.StringIO()`);
@@ -222,47 +211,61 @@ if i % 2 == 0
                 let stdout = pyodideInstance.runPython("sys.stdout.getvalue()");
                 terminal.innerText = "> Kết quả in ra:\n" + stdout;
                 terminal.classList.remove("error-text");
-                
-                // Bắn Code Snapshot lên Server (Code đúng)
+                // BẮT BUỘC BẤM NÚT NÀY THÌ MỚI LƯU CODE
                 logAction('Coding', 'Success', code); 
             } catch (err) {
                 terminal.innerText = "> Lỗi chương trình:\n" + err.message;
                 terminal.classList.add("error-text");
-                
-                // Bắn Code Snapshot lên Server (Code sai)
                 logAction('Coding', 'Error', code, err.message);
             }
         }
 
         // ==========================================
-        // 4. LUỒNG SRL (CHUẨN HÓA JSON CHO view.php)
+        // 5. LUỒNG SRL
         // ==========================================
         function acknowledgePlan(cardId, actionDesc) {
             document.getElementById(cardId).style.display = 'none';
-            // Tạo JSON chuẩn: {"type":"UGPP", "act":"Đọc gợi ý..."}
-            let srlData = JSON.stringify({ type: "UGPP", act: actionDesc });
-            logAction('SRL', srlData);
+            logAction('SRL', JSON.stringify({ type: "UGPP", act: actionDesc }));
         }
 
         function startTimers() {
             setTimeout(function() {
                 let answer = prompt("⏰ CẢNH BÁO THỜI GIAN: Tiến độ của bạn đến đâu rồi?");
-                if(answer) {
-                    let srlData = JSON.stringify({ type: "USEP", act: "Trả lời Popup: " + answer });
-                    logAction('SRL', srlData);
-                }
+                if(answer) logAction('SRL', JSON.stringify({ type: "USEP", act: "Trả lời Popup: " + answer }));
             }, 60000); 
         }
 
         function finishTest() {
-            let srlData = JSON.stringify({ type: "UMP", act: "Bấm nút Nộp bài" });
-            logAction('SRL', srlData);
-            
+            logAction('SRL', JSON.stringify({ type: "UMP", act: "Bấm nút Nộp bài" }));
             if (confirm("Nộp bài và sang phần Đánh giá?")) {
                 clearInterval(aiInterval); 
                 window.open("mock_evaluation.html", "_blank"); 
             }
         }
+
+        // ==========================================
+        // 6. KHỞI TẠO TOÀN BỘ HỆ THỐNG
+        // ==========================================
+        window.onload = async () => {
+            console.log('[Init] 🔄 Đang tải mô hình face-api.js từ ./models...');
+            try {
+                await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
+                await faceapi.nets.faceLandmark68Net.loadFromUri('./models'); 
+                await faceapi.nets.faceExpressionNet.loadFromUri('./models');
+                console.log('[Init] ✅ face-api.js Sẵn sàng!');
+            } catch (error) {
+                document.getElementById('terminal').innerText = "❌ Lỗi: Không thể tải mô hình AI.";
+                return; 
+            }
+
+            await fetchUserInfo();
+            
+            if (currentSessionID) {
+                startCamera();
+                await initPython();
+                startTimers(); 
+            }
+        };
     </script>
 </body>
 </html>

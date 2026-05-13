@@ -17,6 +17,9 @@ $PAGE->set_heading('Hệ thống Quản lý Học tập Đa phương thức');
 // ================================================================
 // TẦNG 3: XEM CHI TIẾT MỘT PHIÊN HỌC CỤ THỂ (DASHBOARD AI)
 // ================================================================
+// ================================================================
+// TẦNG 3: XEM CHI TIẾT MỘT PHIÊN HỌC CỤ THỂ (DASHBOARD AI)
+// ================================================================
 if ($session_id > 0) {
     echo $OUTPUT->header();
     
@@ -27,8 +30,15 @@ if ($session_id > 0) {
                  WHERE s.id = :sessid";
     $user_info = $DB->get_record_sql($sql_user, ['sessid' => $session_id]);
     
+    // THÊM ĐOẠN NÀY ĐỂ BẢO VỆ CODE: Kiểm tra xem có lấy được data không
+    if (!$user_info) {
+        echo '<div class="alert alert-danger">Lỗi: Phiên dữ liệu số #'.$session_id.' không tồn tại, hoặc tài khoản sinh viên đã bị xóa khỏi hệ thống!</div>';
+        echo $OUTPUT->footer();
+        die();
+    }
+    // KẾT THÚC ĐOẠN BẢO VỆ
+
     echo '<a href="view.php?userid='.$user_info->userid.($course_id > 0 ? '&courseid='.$course_id : '').'" class="btn btn-secondary mb-3">⬅️ Quay lại lịch sử của sinh viên</a>';
-    
     // 2. Lấy dữ liệu Đa phương thức (Cảm xúc), Code, SRL
     $emotions = $DB->get_records('local_mmla_multimodal', ['sessionid' => $session_id], 'id ASC');
     $emotion_counts = ['Focused' => 0, 'Confused' => 0, 'Happy' => 0];
@@ -46,7 +56,7 @@ if ($session_id > 0) {
     echo '</div>';
 
     // --- QUY TRÌNH SRL ---
-    echo '<div class="card shadow-sm mb-4"><div class="card-header bg-dark text-white"><h5 class="mb-0">Quy trình Tự điều chỉnh (SRL Timeline)</h5></div><div class="card-body">';
+    echo '<div class="card shadow-sm mb-4"><div class="card-header bg-dark text-white"><h5 class="mb-0">Quy trình Tự điều chỉnh </h5></div><div class="card-body">';
     if (empty($srl_logs)) {
         echo '<p class="text-muted">Chưa ghi nhận tương tác SRL.</p>';
     } else {
@@ -68,12 +78,12 @@ if ($session_id > 0) {
     // --- BIỂU ĐỒ VÀ CODE ---
     echo '<div class="row">';
     echo '<div class="col-md-5"><div class="card shadow-sm mb-4">';
-    echo '<div class="card-header bg-info text-white"><h5 class="mb-0">Trạng thái Tâm lý (AI)</h5></div>';
+    echo '<div class="card-header bg-info text-white"><h5 class="mb-0">Trạng thái Tâm lý </h5></div>';
     echo '<div class="card-body"><canvas id="emotionChart" width="400" height="400"></canvas></div>';
     echo '</div></div>';
 
     echo '<div class="col-md-7"><div class="card shadow-sm mb-4">';
-    echo '<div class="card-header bg-secondary text-white"><h5 class="mb-0">Hành vi Viết mã (Code Snapshots)</h5></div>';
+    echo '<div class="card-header bg-secondary text-white"><h5 class="mb-0">Hành vi Viết mã </h5></div>';
     echo '<div class="card-body" style="max-height: 500px; overflow-y: auto;">';
     if (empty($code_logs)) {
         echo '<div class="alert alert-warning">Sinh viên chưa chạy đoạn code nào.</div>';

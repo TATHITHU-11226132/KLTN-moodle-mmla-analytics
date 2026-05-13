@@ -80,7 +80,7 @@ try {
         $record->sessionid = $payload->session_id;
         $record->emotion = isset($payload->action) ? $payload->action : 'Unknown';
         $record->engagement_score = 0.9;
-        $record->timestamp = isset($payload->timecreated) ? $payload->timecreated : time();
+        $record->timecreated = isset($payload->timecreated) ? $payload->timecreated : time();
         
         error_log("MMLA MULTIMODAL INSERT: " . print_r($record, true));
         $insert_id = $DB->insert_record('local_mmla_multimodal', $record);
