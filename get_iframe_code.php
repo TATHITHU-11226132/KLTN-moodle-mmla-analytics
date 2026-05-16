@@ -1,7 +1,7 @@
 <?php
 require_once('../../config.php');
 
-$iframe_url = $CFG->wwwroot . '/local/mmla_analytics/ide.html';
+$iframe_url = $CFG->wwwroot . '/local/mmla_analytics/test.html';
 
 $iframe_code = '<iframe src="' . $iframe_url . '" width="100%" height="600px" allow="camera; microphone" style="border: 1px solid #ccc; border-radius: 8px;"></iframe>';
 ?>

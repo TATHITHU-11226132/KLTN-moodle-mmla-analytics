@@ -21,7 +21,12 @@ echo "<h2>Danh sách Phiên học gần đây</h2>";
 global $DB;
 
 // Lấy toàn bộ dữ liệu từ bảng local_mmla_session
-$sessions = $DB->get_records('local_mmla_session');
+$sql = "SELECT s.* FROM {local_mmla_session} s 
+        WHERE EXISTS (SELECT 1 FROM {local_mmla_multimodal} m WHERE m.sessionid = s.id)
+           OR EXISTS (SELECT 1 FROM {local_mmla_srl} sr WHERE sr.sessionid = s.id)
+           OR EXISTS (SELECT 1 FROM {local_mmla_coding} cd WHERE cd.sessionid = s.id)
+        ORDER BY s.id DESC";
+$sessions = $DB->get_records_sql($sql);
 
 // Kiểm tra xem có dữ liệu không và in ra dạng bảng HTML
 if ($sessions) {

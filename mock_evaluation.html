@@ -57,11 +57,43 @@
     </div>
 
     <script>
-        function submitMockForm() {
-            // Giả lập việc gửi dữ liệu
-            alert("✅ Hệ thống MMLA đã ghi nhận kết quả đánh giá của bạn. Cảm ơn bạn đã tham gia!");
-            // Đóng tab hiện tại
-            window.close();
+        async function submitMockForm() {
+            // Lấy session ID từ URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const session_id = urlParams.get('sessionid');
+
+            if (!session_id) {
+                alert("Lỗi: Không tìm thấy phiên làm việc!");
+                return;
+            }
+
+            let q1 = document.getElementById("q1").value;
+            let q2 = document.getElementById("q2").value;
+            let q3 = document.getElementById("q3").value;
+            let q4 = document.getElementById("q4").value;
+
+            let payload = {
+                session_id: session_id,
+                category: 'SRL',
+                scaffold_type: 'System',
+                action: JSON.stringify({
+                    type: "USEP", 
+                    act: `Q1:${q1} | Q2:${q2} | Q3:${q3} | Q4:${q4}`
+                }),
+                timecreated: Math.floor(Date.now() / 1000)
+            };
+
+            try {
+                await fetch('./save_log.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                alert("✅ Hệ thống MMLA đã ghi nhận kết quả đánh giá của bạn!");
+                window.close();
+            } catch (error) {
+                alert("Lỗi kết nối khi lưu bài đánh giá.");
+            }
         }
     </script>
 
