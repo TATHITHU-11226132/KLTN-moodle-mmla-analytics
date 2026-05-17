@@ -45,43 +45,44 @@
 
         <div class="right-panel">
             <div class="ide-container">
-    <h3 style="margin-top: 0;">Không gian làm bài</h3>
-    
-    <div id="example-section" style="background: #fff3cd; padding: 15px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #ffeeba;">
-        <h5> Phân tích ví dụ:</h5>
-        <pre><code>for i in range(1, 11):
+                <h3 style="margin-top: 0;">Không gian làm bài</h3>
+                
+                <div id="example-section" style="background: #fff3cd; padding: 15px; border-radius: 5px; margin-bottom: 15px; border: 1px solid #ffeeba;">
+                    <h5> Phân tích ví dụ:</h5>
+                    <pre><code>for i in range(1, 11):
 if i % 2 == 0
     print(i)</code></pre>
-        <p>Đoạn code trên bị lỗi gì?</p>
-        <select id="example-answer" class="form-control" style="width: 100%; padding: 5px; margin-bottom: 10px;">
-            <option value="">-- Chọn lỗi bạn thấy --</option>
-            <option value="syntax">Lỗi cú pháp </option>
-            <option value="logic">Lỗi logic </option>
-            <option value="indent">Lỗi thụt lề </option>
-        </select>
-        <button class="btn-run" onclick="unlockEditor()">Xác nhận & Bắt đầu sửa code</button>
-    </div>
+                    <p>Đoạn code trên bị lỗi gì?</p>
+                    <select id="example-answer" class="form-control" style="width: 100%; padding: 5px; margin-bottom: 10px;">
+                        <option value="">-- Chọn lỗi bạn thấy --</option>
+                        <option value="syntax">Lỗi cú pháp </option>
+                        <option value="logic">Lỗi logic </option>
+                        <option value="indent">Lỗi thụt lề </option>
+                    </select>
+                    <button class="btn-run" onclick="unlockEditor()">Xác nhận & Bắt đầu sửa code</button>
+                </div>
 
-    <div id="coding-section" style="display: none;">
-        <textarea id="python-editor"># Hãy sửa lỗi đoạn code trên vào đây
+                <div id="coding-section" style="display: none;">
+                    <textarea id="python-editor"># Hãy sửa lỗi đoạn code trên vào đây
 for i in range(1, 11):
 if i % 2 == 0
     print(i)</textarea>
-        
-        <div class="action-bar">
-            <button id="run-btn" class="btn-run" onclick="runCode()" disabled>⏳ Đang tải ...</button>
-            <button class="btn-submit" onclick="finishTest()"> Nộp bài & Tự đánh giá</button>
+                    
+                    <div class="action-bar">
+                        <button id="run-btn" class="btn-run" onclick="runCode()" disabled>⏳ Đang tải ...</button>
+                        <button class="btn-submit" onclick="finishTest()"> Nộp bài & Tự đánh giá</button>
+                    </div>
+                    <div id="terminal">> Hệ thống đang khởi động...</div>
+                </div>
+            </div>
         </div>
-        <div id="terminal">> Hệ thống đang khởi động...</div>
     </div>
-</div>
-        </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/python/python.min.js"></script>
     <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
 
-   <script>
+    <script>
         // ==========================================
         // 0. BIẾN TOÀN CỤC
         // ==========================================
@@ -89,6 +90,7 @@ if i % 2 == 0
         let aiInterval;
         let pyodideReady = false;
         let pyodideInstance;
+        let lastLoggedEmotion = null; 
 
         // ==========================================
         // 1. HÀM LẤY THÔNG TIN USER TỪ API
@@ -98,21 +100,20 @@ if i % 2 == 0
                 let response = await fetch('./get_user_info.php');
                 let data = await response.json();
         
-            if (data.status === 'success' && data.session_id) {
-                currentSessionID = data.session_id;
-                console.log("✅ Đã kết nối Session #" + currentSessionID);
-            } else {
-            // Nếu không có session, đẩy về trang bắt đầu
-                 alert("Vui lòng nhấn 'Bắt đầu làm bài' để kích hoạt AI!");
-                 window.location.href = 'start_session.php?courseid=3';
-        }
+                if (data.status === 'success' && data.session_id) {
+                    currentSessionID = data.session_id;
+                    console.log("✅ Đã kết nối Session #" + currentSessionID);
+                } else {
+                    alert("Vui lòng nhấn 'Bắt đầu làm bài' để kích hoạt AI!");
+                    window.location.href = 'start_session.php?courseid=3';
+                }
             } catch (error) {
                  console.error("Lỗi kết nối API");
-    }
-}
+            }
+        }
 
         // ==========================================
-        // 2. HÀM GỬI DỮ LIỆU VỀ SERVER (CÓ RADAR BẮT LỖI)
+        // 2. HÀM GỬI DỮ LIỆU VỀ SERVER
         // ==========================================
         async function logAction(category, action_detail, code_content = '', error_log = '') {
             let timestamp = Math.floor(Date.now() / 1000); 
@@ -150,7 +151,7 @@ if i % 2 == 0
         }
 
         // ==========================================
-        // 3. KHỞI TẠO CAMERA & THU THẬP CẢM XÚC THẬT (BẢN CHUẨN)
+        // 3. KHỞI TẠO CAMERA & XỬ LÝ AI TẠI MÁY TRẠM (RULE-BASED)
         // ==========================================
         async function startCamera() {
             try {
@@ -158,45 +159,80 @@ if i % 2 == 0
                 const videoElement = document.getElementById('webcam');
                 videoElement.srcObject = stream;
         
-                // BẢO HIỂM 1: Set kích thước cho Video để AI không bị "mù"
                 videoElement.addEventListener('loadedmetadata', () => {
                     videoElement.width = videoElement.videoWidth || 480;
                     videoElement.height = videoElement.videoHeight || 360;
                 });
 
                 await videoElement.play();
-                console.log('[Edge AI]  Bắt đầu quét khuôn mặt...');
+                console.log('[Edge AI Engine] Kích hoạt thành công camera quét nét mặt!');
                 
+                let isCallingAI = false; 
+
                 aiInterval = setInterval(async () => {
                     if (videoElement.paused || videoElement.ended) return;
-            
+
                     try {
                         const detection = await faceapi.detectSingleFace(videoElement, new faceapi.TinyFaceDetectorOptions()).withFaceExpressions();
-                
+                        
                         if (detection) {
                             const expressions = detection.expressions;
                             let topEmotion = Object.keys(expressions).reduce((a, b) => expressions[a] > expressions[b] ? a : b);
                             let topScore = expressions[topEmotion];
-                
+                            
                             if (topScore > 0.5) { 
-                               let normalizedEmotion = 'Focused'; 
-                                if (topEmotion === 'happy') normalizedEmotion = 'Happy';
-                                else if (topEmotion !== 'neutral') normalizedEmotion = 'Confused'; 
-                                logAction('Multimodal', normalizedEmotion);
+                                if (topEmotion !== lastLoggedEmotion && !isCallingAI) {
+                                    console.log(" CẢM XÚC THAY ĐỔI! Đang tạo miêu tả tức thì trên máy trạm...");
+                                    isCallingAI = true; 
+                                    lastLoggedEmotion = topEmotion; 
+
+                                    // 1. TẠO TỪ ĐIỂN MAP TRỰC TIẾP TỪ KHÓA SANG CÂU VĂN
+                                    const emotionDictionary = {
+                                        'neutral': 'Sinh viên đang giữ trạng thái tập trung, nét mặt bình thản.',
+                                        'happy': 'Sinh viên đang mỉm cười, có vẻ thoải mái với tiến độ làm bài.',
+                                        'sad': 'Sinh viên đang nhăn nhó, buồn bã, có thể đang gặp khó khăn.',
+                                        'angry': 'Sinh viên đang thể hiện sự bực tức, nhíu mày mạnh, căng thẳng.',
+                                        'fear': 'Sinh viên đang bối rối, lo lắng trước màn hình.',
+                                        'disgusted': 'Sinh viên đang có biểu cảm khó chịu.',
+                                        'surprised': 'Sinh viên đang tỏ vẻ ngạc nhiên, bất ngờ.'
+                                    };
+
+                                    let aiText = emotionDictionary[topEmotion] || 'Sinh viên đang có sự thay đổi nét mặt không xác định.';
+
+                                    console.log("✅ [Local Edge] TẠO TƯỜNG THUẬT THÀNH CÔNG:", aiText);
+                                    logAction('Multimodal', topEmotion); 
+
+                                    isCallingAI = false; 
+                                }
                             }
                         } else {
-                            // BẢO HIỂM 2: Không thấy mặt vẫn bắt buộc gửi dữ liệu để vẽ biểu đồ
-                            console.log(`⚠️ [AI] Không thấy mặt -> Gửi nhãn: NoFace`);
-                            logAction('Multimodal', 'NoFace');
+                            // ⚠️ KHỐI LỆNH XỬ LÝ KHI MẤT DẤU KHUÔN MẶT
+                            if (lastLoggedEmotion !== 'NoFace') {
+                                let noFaceMsg = 'Sinh viên đang mất dấu khuôn mặt, có thể đã cúi xuống, rời vị trí hoặc che camera.';
+                                
+                                // Báo động đỏ ra màn hình Console
+                                console.log("⚠️ [CẢNH BÁO AI]:", noFaceMsg);
+                                
+                                // Báo động trực tiếp lên màn hình Terminal của sinh viên
+                                let terminal = document.getElementById("terminal");
+                                terminal.innerText = terminal.innerText + "\n> ⚠️ HỆ THỐNG GIÁM SÁT: Không tìm thấy khuôn mặt sinh viên!";
+                                terminal.classList.add("error-text");
+                                terminal.scrollTop = terminal.scrollHeight; // Tự động cuộn xuống dòng mới nhất
+                                
+                                // Ghi log vào Database Moodle
+                                logAction('Multimodal', noFaceMsg);
+                                
+                                lastLoggedEmotion = 'NoFace';
+                            }
                         }
                     } catch (error) {
-                        console.error('[Edge AI] Lỗi phân tích:', error);
+                        console.error('❌ LỖI VÒNG LẶP CAMERA:', error);
                     }
-                }, 15000); 
+                }, 3000);
 
             } catch (err) {
-                console.error('❌ LỖI KHỞI TẠO CAMERA CHI TIẾT:', err);
-                alert("Lỗi Camera: " + err.message + "\nHãy kiểm tra quyền truy cập trên thanh địa chỉ!");
+                console.error('❌ LỖI KHỞI TẠO CAMERA:', err);
+                alert("Lỗi Camera: " + err.message);
             }
         }
 
@@ -212,11 +248,9 @@ if i % 2 == 0
         editor.on("change", function() {
             if (!isTyping) {
                 isTyping = true;
-                // Ghi nhận sinh viên đang code (PC - Program on computer)
                 logAction('Coding', 'PC', '', 'Đang gõ code...');
             }
             
-            // Nếu ngừng gõ 10 giây, reset trạng thái để lần sau gõ sẽ log tiếp
             clearTimeout(typingTimer);
             typingTimer = setTimeout(function() {
                 isTyping = false;
@@ -243,7 +277,6 @@ if i % 2 == 0
                 let stdout = pyodideInstance.runPython("sys.stdout.getvalue()");
                 terminal.innerText = "> Kết quả in ra:\n" + stdout;
                 terminal.classList.remove("error-text");
-                // BẮT BUỘC BẤM NÚT NÀY THÌ MỚI LƯU CODE
                 logAction('Coding', 'Success', code); 
             } catch (err) {
                 terminal.innerText = "> Lỗi chương trình:\n" + err.message;
@@ -260,10 +293,9 @@ if i % 2 == 0
             logAction('SRL', JSON.stringify({ type: "UGPP", act: actionDesc }));
         }
 
-       function startTimers() {
+        function startTimers() {
             setTimeout(function() {
                 let answer = prompt(" CẢNH BÁO THỜI GIAN: Tiến độ của bạn đến đâu rồi?");
-                // Sửa USEP thành UMP
                 if(answer) logAction('SRL', JSON.stringify({ type: "UMP", act: "Trả lời Popup: " + answer }));
             }, 60000); 
         }
@@ -272,7 +304,6 @@ if i % 2 == 0
             logAction('SRL', JSON.stringify({ type: "UMP", act: "Bấm nút Nộp bài" }));
             if (confirm("Nộp bài và sang phần Đánh giá?")) {
                 clearInterval(aiInterval); 
-                // Truyền ID qua URL param
                 window.open("mock_evaluation.html?sessionid=" + currentSessionID, "_blank"); 
             }
         }
@@ -308,15 +339,12 @@ if i % 2 == 0
                 return;
             }
             
-            // Log hành vi học từ ví dụ
             logAction('SRL', JSON.stringify({ type: "PR", act: "Đã phân tích ví dụ" }));
             logAction('SRL', JSON.stringify({ type: "PS", act: "Chọn đáp án: " + answer }));
 
-            // Ẩn ví dụ, hiện editor
             document.getElementById("example-section").style.display = "none";
             document.getElementById("coding-section").style.display = "block";
             
-            // Refresh lại CodeMirror để nó render đúng kích thước sau khi hiện lên
             setTimeout(() => editor.refresh(), 100);
         }
     </script>

@@ -15,6 +15,20 @@ $PAGE->set_title('Dashboard MMLA');
 $PAGE->set_heading('Hệ thống Quản lý Học tập Đa phương thức');
 
 // ================================================================
+// TỪ ĐIỂN DỊCH TỪ KHÓA SANG CÂU VĂN (RULE-BASED DICTIONARY)
+// ================================================================
+$emotion_dict = array(
+    'neutral'   => 'Sinh viên đang giữ trạng thái tập trung, nét mặt bình thản.',
+    'happy'     => 'Sinh viên đang mỉm cười, có vẻ thoải mái với tiến độ làm bài.',
+    'sad'       => 'Sinh viên đang nhăn nhó, buồn bã, có thể đang gặp khó khăn.',
+    'angry'     => 'Sinh viên đang thể hiện sự bực tức, nhíu mày mạnh, căng thẳng.',
+    'fear'      => 'Sinh viên đang bối rối, lo lắng trước màn hình.',
+    'disgusted' => 'Sinh viên đang có biểu cảm khó chịu.',
+    'surprised' => 'Sinh viên đang tỏ vẻ ngạc nhiên, bất ngờ.',
+    'NoFace'    => 'Sinh viên đang mất dấu khuôn mặt, có thể đã cúi xuống hoặc che camera.'
+);
+
+// ================================================================
 // TẦNG 3: XEM CHI TIẾT MỘT PHIÊN HỌC CỤ THỂ (DASHBOARD AI)
 // ================================================================
 if ($session_id > 0) {
@@ -47,16 +61,23 @@ if ($session_id > 0) {
     $srl_logs = $DB->get_records('local_mmla_srl', ['sessionid' => $session_id], 'timecreated ASC');
 
     $timeline = [];
-    $emotion_counts = ['Focused' => 0, 'Confused' => 0, 'Happy' => 0, 'NoFace' => 0];
+    
+    // Bộ đếm từ khóa chuẩn mới
+    $emotion_counts = [
+        'neutral' => 0, 'happy' => 0, 'sad' => 0, 'angry' => 0, 
+        'fear' => 0, 'disgusted' => 0, 'surprised' => 0, 'NoFace' => 0
+    ];
     
     $example_pr = "Chưa có dữ liệu";
     $example_ps = "Chưa có dữ liệu";
     $appraisal_data = null;
 
-    // Phân tích Cảm xúc
+    // Phân tích Cảm xúc 
     if ($emotions) {
         foreach ($emotions as $e) {
             $timeline[] = ['time' => $e->timecreated, 'type' => 'emotion', 'data' => $e->emotion];
+            
+            // Đếm các từ khóa hợp lệ có trong từ điển
             if (isset($emotion_counts[$e->emotion])) { 
                 $emotion_counts[$e->emotion]++; 
             }
@@ -70,7 +91,7 @@ if ($session_id > 0) {
         }
     }
     
-    // Phân tích SRL và bóc tách dữ liệu đặc biệt (Bổ sung kiểm tra JSON an toàn)
+    // Phân tích SRL và bóc tách dữ liệu đặc biệt
     if ($srl_logs) {
         foreach ($srl_logs as $s) {
             $srl_data = json_decode($s->action);
@@ -78,7 +99,6 @@ if ($session_id > 0) {
                 $srl_type = isset($srl_data->type) ? $srl_data->type : 'UNK';
                 $srl_act = isset($srl_data->act) ? $srl_data->act : 'Unknown';
             } else {
-                // Rơi vào trường hợp chuỗi lưu thuần túy không phải JSON
                 $srl_type = 'RAW';
                 $srl_act = $s->action;
             }
@@ -137,104 +157,246 @@ if ($session_id > 0) {
     }
     echo '</div></div>';
 
-    // 3. Biểu đồ cảm xúc
-    $focused_val = (int)$emotion_counts["Focused"];
-    $confused_val = (int)$emotion_counts["Confused"];
-    $happy_val = (int)$emotion_counts["Happy"];
+    // 3. Biểu đồ cảm xúc (Gom nhóm dữ liệu)
+    $chart_neutral = $emotion_counts['neutral'];
+    $chart_positive = $emotion_counts['happy'] + $emotion_counts['surprised'];
+    $chart_negative = $emotion_counts['sad'] + $emotion_counts['angry'] + $emotion_counts['fear'] + $emotion_counts['disgusted'];
 
     echo '<div class="card shadow-sm mb-4"><div class="card-header bg-info text-white"><h5 class="mb-0">Biểu đồ trạng thái Tâm lý</h5></div><div class="card-body"><canvas id="emotionChart" width="400" height="300"></canvas>';
     
-    if ($focused_val == 0 && $confused_val == 0 && $happy_val == 0) {
-        echo '<p class="text-center text-muted mt-2"><small>Chưa có đủ dữ liệu khuôn mặt để phân tích.</small></p>';
+    if ($chart_neutral == 0 && $chart_positive == 0 && $chart_negative == 0) {
+        echo '<p class="text-center text-muted mt-2"><small>Chưa đủ dữ liệu từ khóa cảm xúc mới để hiển thị biểu đồ.</small></p>';
     }
     
     echo '</div></div>';
     echo '</div>'; // Hết cột trái
 
-    // CỘT PHẢI: LUỒNG HÀNH VI (PROCESS MINING TIMELINE)
-    echo '<div class="col-md-7"><div class="card shadow-sm mb-4">';
-    echo '<div class="card-header bg-dark text-white"><h5 class="mb-0">Bản đồ Luồng hành vi</h5></div>';
-    echo '<div class="card-body" style="background: #f8f9fa; max-height: 800px; overflow-y: auto;">';
+    // ================================================================
+    // CỘT PHẢI: TRẠM RADAR GIÁM SÁT HÀNH VI (TIMELINE PROCESS MINING)
+    // ================================================================
+    echo '<div class="col-md-7">';
+    
+    // Nhúng Style CSS cao cấp cho Trục thời gian (Timeline Axis) và hiệu ứng Cụm hành vi (Clusters)
+    echo '<style>
+        .mmla-radar-container {
+            background: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+            border: 1px solid #eef2f5;
+        }
+        .mmla-timeline {
+            position: relative;
+            padding-left: 35px;
+            margin-left: 15px;
+            border-left: 3px solid #e9ecef;
+        }
+        .timeline-item {
+            position: relative;
+            margin-bottom: 24px;
+            transition: all 0.2s ease-in-out;
+        }
+        .timeline-item:last-child {
+            margin-bottom: 0;
+        }
+        /* Nốt thắt thời gian trên trục radar */
+        .timeline-dot {
+            position: absolute;
+            left: -46px;
+            top: 4px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 4px solid #6c757d;
+            z-index: 3;
+            box-shadow: 0 0 0 3px #ffffff;
+        }
+        /* Thẻ nội dung hành vi phân lớp */
+        .timeline-card {
+            border: 1px solid #eef2f5;
+            border-radius: 8px;
+            padding: 14px 16px;
+            background: #ffffff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.01);
+        }
+        .timeline-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+        }
+        .timeline-time {
+            font-family: "Courier New", Courier, monospace;
+            font-weight: 700;
+            color: #495057;
+            background: #e9ecef;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+        
+        /* PHÂN CỤM THỊ GIÁC THEO TRẠNG THÁI (VISUAL CLUSTERING) */
+        /* 1. Cụm Cảm xúc Bình thản / Tập trung */
+        .cluster-emotion-neutral { border-left: 5px solid #0d6efd !important; background-color: #f8fafd; }
+        .cluster-emotion-neutral .timeline-dot { border-color: #0d6efd; background-color: #0d6efd; }
+        
+        /* 2. Cụm Cảm xúc Tích cực / Thoải mái */
+        .cluster-emotion-positive { border-left: 5px solid #198754 !important; background-color: #f4fbf7; }
+        .cluster-emotion-positive .timeline-dot { border-color: #198754; background-color: #198754; }
+        
+        /* 3. Cụm Cảm xúc Tiêu cực / Bối rối / Căng thẳng */
+        .cluster-emotion-negative { border-left: 5px solid #fd7e14 !important; background-color: #fffaf5; }
+        .cluster-emotion-negative .timeline-dot { border-color: #fd7e14; background-color: #fd7e14; }
+        
+        /* 4. Cảnh báo mất dấu khuôn mặt (Ghost state) */
+        .cluster-noface { border-left: 5px dashed #dc3545 !important; background-color: #fff5f5; }
+        .cluster-noface .timeline-dot { border-color: #dc3545; background-color: #ffffff; animation: pulse-red 2s infinite; }
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }
+            70% { box-shadow: 0 0 0 8px rgba(220, 53, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+        }
+        
+        /* 5. Cụm Tác vụ Gõ code tích cực */
+        .cluster-code-pc { border-left: 5px solid #6c757d !important; background-color: #f8f9fa; }
+        .cluster-code-pc .timeline-dot { border-color: #6c757d; background-color: #ffffff; }
+        
+        /* 6. Cụm Lỗi Biên dịch chương trình (Bế tắc) */
+        .cluster-code-error { border-left: 5px solid #dc3545 !important; background-color: #fff5f5; }
+        .cluster-code-error .timeline-dot { border-color: #dc3545; background-color: #dc3545; }
+        
+        /* 7. Cụm Biên dịch thành công */
+        .cluster-code-success { border-left: 5px solid #198754 !important; background-color: #f0fdf4; }
+        .cluster-code-success .timeline-dot { border-color: #198754; background-color: #198754; }
+        
+        /* 8. Cụm Kích hoạt trợ giúp Giám sát Siêu nhận thức (SRL Scaffold) */
+        .cluster-srl { border-left: 5px solid #6f42c1 !important; background-color: #faf5ff; }
+        .cluster-srl .timeline-dot { border-color: #6f42c1; background-color: #6f42c1; }
+    </style>';
+
+    echo '<div class="card mmla-radar-container mb-4">';
+    echo '<div class="card-header bg-dark text-white d-flex justify-content-between align-items-center py-3">';
+    echo '<h5 class="mb-0">🎯 Bản đồ Luồng hành vi thời gian thực</h5>';
+    echo '<span class="badge bg-secondary">MMLA Process Mining</span>';
+    echo '</div>';
+    
+    echo '<div class="card-body" style="background: #ffffff; max-height: 800px; overflow-y: auto; padding: 25px 20px;">';
     
     if (empty($timeline)) {
-        echo '<div class="alert alert-warning">Chưa có hành vi nào được ghi nhận.</div>';
+        echo '<div class="alert alert-warning border-0 shadow-sm text-center">Chưa có chuỗi hành vi tương tác nào được ghi nhận từ hệ thống máy trạm.</div>';
     } else {
-        echo '<div style="border-left: 3px solid #ccc; padding-left: 20px; margin-left: 10px;">';
+        // Khởi tạo container của trục thời gian dọc
+        echo '<div class="mmla-timeline">';
+        
         foreach ($timeline as $event) {
             $time_str = userdate($event['time'], '%H:%M:%S');
+            $cluster_class = '';
+            $content_html = '';
             
+            // XỬ LÝ KHỐI SỰ KIỆN: CẢM XÚC (VISION)
             if ($event['type'] == 'emotion') {
-                if ($event['data'] == 'NoFace') continue; 
-                
-                $emo_color = $event['data'] == 'Focused' ? 'text-success' : ($event['data'] == 'Confused' ? 'text-danger' : 'text-warning');
-                $emo_icon = $event['data'] == 'Focused' ? '🎯' : ($event['data'] == 'Confused' ? '❓' : '😊');
-                echo '<div class="mb-3"><small class="text-muted">'.$time_str.'</small><br><span class="'.$emo_color.' font-weight-bold">'.$emo_icon.' Cảm xúc: '.$event['data'].'</span></div>';
-            
-            } elseif ($event['type'] == 'srl') {
-                $badge = 'badge-secondary';
-                if ($event['srl_type'] == 'UGPP') $badge = 'badge-primary';
-                if ($event['srl_type'] == 'UMP') $badge = 'badge-warning text-dark';
-                if ($event['srl_type'] == 'PR' || $event['srl_type'] == 'PS') $badge = 'badge-info';
-                if ($event['srl_type'] == 'USEP') $badge = 'badge-dark';
-                
-                echo '<div class="mb-3"><small class="text-muted">'.$time_str.'</small><br><span class="badge '.$badge.' p-2" style="font-size:13px;">['.htmlspecialchars($event['srl_type']).'] '.htmlspecialchars($event['act']).'</span></div>';
-            
-            } elseif ($event['type'] == 'code') {
-                $is_pc = $event['status'] == 'PC';
-                $is_err = $event['status'] == 'Error';
-                $border_color = $is_pc ? '#17a2b8' : ($is_err ? '#dc3545' : '#28a745');
-                $status_label = $is_pc ? ' Đang gõ code (PC)' : ($is_err ? '❌ Chạy lỗi (DB)' : 'Chạy thành công (RP)');
-                
-                echo '<div class="mb-3"><small class="text-muted">'.$time_str.'</small><br>';
-                echo '<div style="border-left: 4px solid '.$border_color.'; padding-left: 10px; background: #fff; padding: 10px; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">';
-                echo '<strong>'.$status_label.'</strong>';
-                if (!$is_pc) {
-                    echo '<pre style="background: #272822; color: #f8f8f2; padding: 8px; margin-top: 5px; border-radius: 4px; font-size: 12px; white-space: pre-wrap;">'.htmlspecialchars($event['code']).'</pre>';
-                    if ($is_err) echo '<div class="text-danger mt-1" style="font-size: 12px;">'.htmlspecialchars($event['error']).'</div>';
+                // ĐÃ SỬA LỖI: Chuẩn hóa chữ thường để bộ lọc ngoại lệ hoạt động chính xác tuyệt đối
+                $emotion_key = strtolower($event['data']);
+                if (in_array($emotion_key, array('focused', 'confused', 'happy'))) {
+                    continue; 
                 }
-                echo '</div></div>';
-            }
-        }
-        echo '</div>'; // Đóng đường kẻ dọc
 
-        // --- BẮT ĐẦU ĐOẠN CODE VẼ SƠ ĐỒ MERMAID ---
-        echo '<hr><h5 class="mt-4 mb-3">Sơ đồ Luồng trạng thái (Process Map)</h5>';
-        echo '<div class="text-center bg-white p-3 border" style="border-radius: 8px;">';
-        echo '<div class="mermaid">';
-        
-        echo "graph TD\n";
-        echo "classDef academic fill:#fff,stroke:#000,stroke-width:2px,color:#000,font-family:Arial;\n";
-        
-        $prev_node = "";
-        $node_counter = 1;
+                // Kiểm tra trạng thái mất dấu khuôn mặt
+                if ($event['data'] === 'NoFace') {
+                    $cluster_class = 'cluster-noface';
+                    $content_html = '<div class="timeline-meta">
+                                        <span class="timeline-time">🕒 ' . $time_str . '</span>
+                                        <span class="badge bg-danger text-white">⚠️ SECURITY ALERT</span>
+                                     </div>
+                                     <div class="d-flex align-items-center text-danger font-weight-bold" style="font-size: 14px;">
+                                        <span style="font-size: 20px; margin-right: 8px;">👻</span>
+                                        <span>Không tìm thấy khuôn mặt sinh viên (Rời vị trí hoặc che camera)</span>
+                                     </div>';
+                } else {
+                    // Phân nhóm cảm xúc cục bộ để gán màu nền cụm trực quan
+                    if (in_array($emotion_key, array('happy', 'surprised'))) {
+                        $cluster_class = 'cluster-emotion-positive';
+                        $badge_element = '<span class="badge bg-success">Tâm lý: Tích cực</span>';
+                    } elseif (in_array($emotion_key, array('sad', 'angry', 'fear', 'disgusted'))) {
+                        $cluster_class = 'cluster-emotion-negative';
+                        $badge_element = '<span class="badge bg-warning text-dark">Tâm lý: Căng thẳng/Bối rối</span>';
+                    } else {
+                        $cluster_class = 'cluster-emotion-neutral';
+                        $badge_element = '<span class="badge bg-primary">Tâm lý: Tập trung</span>';
+                    }
 
-        foreach ($timeline as $event) {
-            $label = "";
-            if ($event['type'] == 'emotion' && $event['data'] != 'NoFace') {
-                $label = "Cảm xúc: " . $event['data'];
+                    $display_text = isset($emotion_dict[$event['data']]) ? $emotion_dict[$event['data']] : $event['data'];
+                    
+                    $content_html = '<div class="timeline-meta">
+                                        <span class="timeline-time">🕒 ' . $time_str . '</span>
+                                        ' . $badge_element . '
+                                     </div>
+                                     <div style="display: flex; align-items: flex-start; margin-top: 4px;">
+                                        <span style="font-size: 18px; margin-right: 8px; line-height: 1.4;">🤖</span>
+                                        <em class="text-dark" style="font-size: 14px; line-height: 1.5;">' . htmlspecialchars($display_text) . '</em>
+                                     </div>';
+                }
+            
+            // XỬ LÝ KHỐI SỰ KIỆN: TỰ ĐIỀU CHỈNH HỌC TẬP (SRL SCAFFOLD)
             } elseif ($event['type'] == 'srl') {
-                $label = "[" . $event['srl_type'] . "] " . $event['act'];
+                $cluster_class = 'cluster-srl';
+                
+                $badge_class = 'bg-secondary';
+                $srl_title = 'Tương tác Siêu nhận thức';
+                if ($event['srl_type'] == 'UGPP') { $badge_class = 'bg-purple text-white'; $srl_title = 'SRL: Tiếp nhận gợi ý'; }
+                if ($event['srl_type'] == 'UMP') { $badge_class = 'bg-info text-dark'; $srl_title = 'SRL: Giám sát tiến độ'; }
+                if ($event['srl_type'] == 'PR' || $event['srl_type'] == 'PS') { $badge_class = 'bg-teal text-white'; $srl_title = 'SRL: Phân tích ví dụ'; }
+                if ($event['srl_type'] == 'USEP') { $badge_class = 'bg-dark text-white'; $srl_title = 'SRL: Tự đánh giá'; }
+                
+                $content_html = '<div class="timeline-meta">
+                                    <span class="timeline-time">🕒 ' . $time_str . '</span>
+                                    <span class="badge ' . $badge_class . '" style="font-size:11px; padding: 4px 8px;">' . $srl_title . '</span>
+                                 </div>
+                                 <div class="mt-1" style="font-size: 14px; color: #553c9a; font-weight: 500;">
+                                    🧩 <span class="badge bg-light text-dark border">[' . htmlspecialchars($event['srl_type']) . ']</span> ' . htmlspecialchars($event['act']) . '
+                                 </div>';
+            
+            // XỬ LÝ KHỐI SỰ KIỆN: LẬP TRÌNH (CODING LOGIC)
             } elseif ($event['type'] == 'code') {
-                $label = $event['status'] == 'PC' ? "Gõ code (PC)" : ($event['status'] == 'Error' ? "Lỗi (DB)" : "Thành công (RP)");
+                $is_pc = ($event['status'] === 'PC');
+                $is_err = ($event['status'] === 'Error');
+                
+                if ($is_pc) {
+                    $cluster_class = 'cluster-code-pc';
+                    $badge_code = '<span class="badge bg-secondary">Hành vi: Gõ code</span>';
+                    $status_body = '<div class="text-muted" style="font-size:13px;"><i class="fa fa-pencil"></i> Sinh viên đang tích cực chỉnh sửa cấu trúc mã nguồn trên IDE...</div>';
+                } elseif ($is_err) {
+                    $cluster_class = 'cluster-code-error';
+                    $badge_code = '<span class="badge bg-danger">Trạng thái: Lỗi Biên dịch ❌</span>';
+                    $status_body = '<pre style="background: #272822; color: #f8f8f2; padding: 10px; margin-top: 6px; border-radius: 6px; font-size: 12px; font-family: Consolas, Monaco, monospace; white-space: pre-wrap; overflow-x: auto;">' . htmlspecialchars($event['code']) . '</pre>
+                                    <div class="text-danger mt-1 font-weight-bold" style="font-size: 12px; background: #fff5f5; padding: 6px; border-radius: 4px; border: 1px dashed #f5c6cb;">
+                                        🚨 Error Log: ' . htmlspecialchars($event['error']) . '
+                                    </div>';
+                } else {
+                    $cluster_class = 'cluster-code-success';
+                    $badge_code = '<span class="badge bg-success">Trạng thái: Chạy thành công  </span>';
+                    $status_body = '<pre style="background: #272822; color: #a6e22e; padding: 10px; margin-top: 6px; border-radius: 6px; font-size: 12px; font-family: Consolas, Monaco, monospace; white-space: pre-wrap; overflow-x: auto;">' . htmlspecialchars($event['code']) . '</pre>';
+                }
+                
+                $content_html = '<div class="timeline-meta">
+                                    <span class="timeline-time">🕒 ' . $time_str . '</span>
+                                    ' . $badge_code . '
+                                 </div>
+                                 <div class="mt-1">' . $status_body . '</div>';
             }
             
-            if ($label != "") {
-                $safe_label = str_replace('"', "'", $label);
-                $current_node = "N" . $node_counter;
-                echo $current_node . '("' . $safe_label . '"):::academic' . "\n";
-                if ($prev_node != "") {
-                    echo $prev_node . " --> " . $current_node . "\n";
-                }
-                $prev_node = $current_node;
-                $node_counter++;
-            }
+            // Tiến hành render thẻ phần tử tương tác ra giao diện dòng thời gian của máy chủ
+            echo '<div class="timeline-item">';
+            echo '  <div class="timeline-dot"></div>';
+            echo '  <div class="timeline-card ' . $cluster_class . '">';
+            echo '      ' . $content_html;
+            echo '  </div>';
+            echo '</div>';
         }
-        echo '</div></div>';
-        echo '<script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>';
-        echo '<script>mermaid.initialize({startOnLoad:true, theme: "neutral"});</script>';
-        // --- KẾT THÚC ĐOẠN CODE VẼ SƠ ĐỒ MERMAID ---
+        
+        echo '</div>'; // Đóng mmla-timeline
     }
-    echo '</div></div></div></div>'; // Đóng thẻ
+    echo '</div></div></div></div>'; // Đóng toàn bộ thẻ bọc ngoài của Cột phải
 
     // Chart.js Script
     echo '<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>';
@@ -244,9 +406,9 @@ if ($session_id > 0) {
             new Chart(ctx, {
                 type: "doughnut",
                 data: {
-                    labels: ["Tập trung (Focused)", "Bối rối (Confused)", "Tích cực (Happy)"],
+                    labels: ["Tập trung/Bình thản", "Khó khăn/Căng thẳng", "Tích cực/Thoải mái"],
                     datasets: [{
-                        data: ['. $focused_val .', '. $confused_val .', '. $happy_val .'],
+                        data: ['. $chart_neutral .', '. $chart_negative .', '. $chart_positive .'],
                         backgroundColor: ["#28a745", "#dc3545", "#ffc107"],
                         borderWidth: 1
                     }]
